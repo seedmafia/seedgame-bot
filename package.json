@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "postinstall": "npx playwright install --with-deps",
     "start": "node index.js"
   },
   "dependencies": {
-    "@line/bot-sdk": "^7.5.1",
-    "dotenv": "^16.3.1",
+    "@line/bot-sdk": "^7.5.0",
+    "dotenv": "^16.0.3",
     "express": "^4.18.2",
     "playwright": "^1.43.1"
   }
