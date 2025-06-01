@@ -12,22 +12,26 @@ const config = {
 
 const client = new line.Client(config);
 const app = express();
-app.use(express.json());
 
-// Serve images
+// เสิร์ฟรูปภาพจาก public/images
 app.use('/images', express.static(path.join(__dirname, 'public/images')));
 
-// User sessions (จำไว้ว่าลูกค้าคนนี้อยู่ขั้นตอนไหน)
-const session = {};
+// จัดการ raw body สำหรับ LINE Signature
+app.post(
+  '/webhook',
+  line.middleware(config),
+  express.json({ verify: (req, res, buf) => { req.rawBody = buf } }),
+  (req, res) => {
+    Promise.all(req.body.events.map(handleEvent))
+      .then(result => res.json(result))
+      .catch(err => {
+        console.error('Webhook error:', err);
+        res.status(500).end();
+      });
+  }
+);
 
-app.post('/webhook', line.middleware(config), (req, res) => {
-  Promise.all(req.body.events.map(handleEvent))
-    .then(result => res.json(result))
-    .catch(err => {
-      console.error('Webhook error:', err);
-      res.status(500).end();
-    });
-});
+const session = {}; // เก็บขั้นตอนของแต่ละ user
 
 async function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') return Promise.resolve(null);
@@ -36,7 +40,7 @@ async function handleEvent(event) {
   const userId = event.source.userId;
   const profile = await client.getProfile(userId);
 
-  // เช็คว่าเป็นมาเฟีย
+  // ตรวจสอบสิทธิ์
   if (!profile.displayName.includes('✅')) {
     return client.replyMessage(event.replyToken, {
       type: 'text',
@@ -44,7 +48,7 @@ async function handleEvent(event) {
     });
   }
 
-  // เริ่มขั้นตอนเติมเงิน
+  // เริ่มเติมเงิน
   if (msg === 'เติมเงิน') {
     session[userId] = { step: 'await_amount' };
     return client.replyMessage(event.replyToken, {
@@ -60,7 +64,7 @@ async function handleEvent(event) {
     });
   }
 
-  // รับจำนวนเงินที่ลูกค้าพิม
+  // รับยอดเงิน
   if (session[userId]?.step === 'await_amount') {
     const amount = parseInt(msg);
     if (isNaN(amount) || amount < 1) {
@@ -76,7 +80,7 @@ async function handleEvent(event) {
     });
   }
 
-  // รับรหัส AID แล้วเริ่มเติมเงิน
+  // รับ AID และเติมเงิน
   if (session[userId]?.step === 'await_aid' && msg.startsWith('aid')) {
     const aid = msg.toUpperCase();
     const amount = session[userId].amount;

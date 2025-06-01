@@ -1,38 +1,22 @@
-const { chromium } = require('playwright-core');
-const fs = require('fs');
-const path = require('path');
-
-const pendingOrders = {};
-
-async function execTopup(client, userId, aid) {
-  if (pendingOrders[userId]) return;
-  pendingOrders[userId] = true;
-
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    executablePath: '/usr/bin/google-chrome-stable'
-  });
-  const page = await browser.newPage();
-
-  try {
-    await page.goto('https://th-member.combocabalm.com/dashboard', { timeout: 60000 });
-
-    await page.waitForSelector('text=เติมเงิน', { timeout: 10000 });
-    await page.click('text=เติมเงิน');
     await page.waitForTimeout(2000);
 
-    await page.click('button.qty-count.qty-count-add');
+    // กรอกจำนวนเงินตามที่ลูกค้าระบุ
+    const amountInputSelector = 'input[name="amount"]';
+    await page.waitForSelector(amountInputSelector);
+    await page.fill(amountInputSelector, amount.toString());
 
+    // กดปุ่ม "ส่งพอยต์"
     await page.click('text=ส่งพอยต์');
     await page.waitForSelector('input[name="aid"]', { timeout: 5000 });
     await page.fill('input[name="aid"]', aid);
     await page.click('text=ยืนยัน');
 
+    // รอแล้วกด QR Code
     await page.waitForSelector('text=QR Code', { timeout: 5000 });
     await page.click('text=QR Code');
     await page.waitForSelector('div.qr-box img');
 
+    // แคปภาพ QR Code
     const qrElement = await page.$('div.qr-box');
     const qrPath = path.join(__dirname, `public/images/qr-${userId}.png`);
     await qrElement.screenshot({ path: qrPath });
