@@ -1,8 +1,8 @@
-// index.js
 const express = require('express');
 const line = require('@line/bot-sdk');
 const { execTopup } = require('./bot');
 const path = require('path');
+const bodyParser = require('body-parser');
 require('dotenv').config();
 
 const config = {
@@ -13,27 +13,26 @@ const config = {
 const client = new line.Client(config);
 const app = express();
 
-app.use(express.json());
-
-// ✅ Serve static images from public/images
+// ✅ เสิร์ฟภาพ
 app.use('/images', express.static(path.join(__dirname, 'public/images')));
 
-// ✅ Webhook endpoint
-app.post('/webhook', line.middleware(config), async (req, res) => {
-  try {
-    const results = await Promise.all(req.body.events.map(handleEvent));
-    res.json(results); // ✅ ส่งสถานะ 200 กลับให้ LINE Platform
-  } catch (err) {
-    console.error('Webhook error:', err);
-    res.status(500).end(); // ❌ ถ้ามี error
+// ✅ Webhook endpoint (ใช้ bodyParser แบบ raw)
+app.post(
+  '/webhook',
+  bodyParser.raw({ type: '*/*' }),
+  line.middleware(config),
+  (req, res) => {
+    Promise.all(req.body.events.map(handleEvent))
+      .then(result => res.json(result))
+      .catch(err => {
+        console.error('Webhook error:', err);
+        res.status(500).end();
+      });
   }
-});
+);
 
-// ✅ Event handler
 async function handleEvent(event) {
-  if (event.type !== 'message' || event.message.type !== 'text') {
-    return null;
-  }
+  if (event.type !== 'message' || event.message.type !== 'text') return null;
 
   const msg = event.message.text.toLowerCase();
   const userId = event.source.userId;
@@ -65,7 +64,6 @@ async function handleEvent(event) {
   return null;
 }
 
-// ✅ Start server
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`🚀 Bot server is running at port ${port}`);
