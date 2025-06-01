@@ -1,15 +1,17 @@
 {
   "name": "seedgame-bot",
   "version": "1.0.0",
-  "description": "Auto topup bot for combocabalm",
+  "description": "Topup automation bot for seedgame using LINE Messaging API and Playwright",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "npx playwright install --with-deps"
   },
   "dependencies": {
-    "@line/bot-sdk": "^7.5.1",
+    "@line/bot-sdk": "^7.5.0",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "playwright-core": "^1.43.1"
+    "playwright": "^1.43.1"
   }
 }
