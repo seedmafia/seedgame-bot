@@ -1,104 +1,95 @@
-// index.js
-const express = require('express');
-const line = require('@line/bot-sdk');
-const { execTopup } = require('./bot');
+const { chromium } = require('playwright');
+const fs = require('fs');
 const path = require('path');
-require('dotenv').config();
 
-const config = {
-  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.LINE_CHANNEL_SECRET
-};
+const pendingOrders = {};
 
-const client = new line.Client(config);
-const app = express();
+async function execTopup(client, userId, aid, amount) {
+  if (pendingOrders[userId]) return;
+  pendingOrders[userId] = true;
 
-// เสิร์ฟรูปภาพจาก public/images
-app.use('/images', express.static(path.join(__dirname, 'public/images')));
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
 
-// จัดการ raw body สำหรับ LINE Signature
-app.post(
-  '/webhook',
-  line.middleware(config),
-  express.json({ verify: (req, res, buf) => { req.rawBody = buf } }),
-  (req, res) => {
-    Promise.all(req.body.events.map(handleEvent))
-      .then(result => res.json(result))
-      .catch(err => {
-        console.error('Webhook error:', err);
-        res.status(500).end();
-      });
-  }
-);
+  const page = await browser.newPage();
 
-const session = {}; // เก็บขั้นตอนของแต่ละ user
+  try {
+    await page.goto('https://th-member.combocabalm.com/dashboard', { timeout: 60000 });
 
-async function handleEvent(event) {
-  if (event.type !== 'message' || event.message.type !== 'text') return Promise.resolve(null);
+    await page.waitForSelector('text=เติมเงิน', { timeout: 10000 });
+    await page.click('text=เติมเงิน');
+    await page.waitForTimeout(2000);
 
-  const msg = event.message.text.trim().toLowerCase();
-  const userId = event.source.userId;
-  const profile = await client.getProfile(userId);
+    // พิมพ์จำนวนเงิน
+    const amountInputSelector = 'input[name="amount"]';
+    await page.waitForSelector(amountInputSelector);
+    await page.fill(amountInputSelector, amount.toString());
 
-  // ตรวจสอบสิทธิ์
-  if (!profile.displayName.includes('✅')) {
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: 'You Not Mafia​ คุณไม่ใช่มาเฟีย..'
-    });
-  }
+    await page.click('text=ส่งพอยต์');
+    await page.waitForSelector('input[name="aid"]', { timeout: 5000 });
+    await page.fill('input[name="aid"]', aid);
+    await page.click('text=ยืนยัน');
 
-  // เริ่มเติมเงิน
-  if (msg === 'เติมเงิน') {
-    session[userId] = { step: 'await_amount' };
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text:
-        'กรุณาพิมจำนวนเงินที่ท่านต้องการเติมค่ะ\n' +
-        '💸 100 = 1100 พ้อยท์\n' +
-        '💸 500 = 5500 พ้อยท์\n' +
-        '💸 1000 = 11000 พ้อยท์\n' +
-        '💸 3000 = 33000 พ้อยท์\n' +
-        '💸 10000 = 113000 พ้อยท์\n' +
-        '\nหากต้องการระบุจำนวนอื่น ให้พิมพ์ตัวเลขเช่น: 920'
-    });
-  }
+    await page.waitForSelector('text=QR Code', { timeout: 5000 });
+    await page.click('text=QR Code');
+    await page.waitForSelector('div.qr-box img');
 
-  // รับยอดเงิน
-  if (session[userId]?.step === 'await_amount') {
-    const amount = parseInt(msg);
-    if (isNaN(amount) || amount < 1) {
-      return client.replyMessage(event.replyToken, {
+    const qrElement = await page.$('div.qr-box');
+    const qrPath = path.join(__dirname, `public/images/qr-${userId}.png`);
+    await qrElement.screenshot({ path: qrPath });
+
+    await client.pushMessage(userId, [
+      { type: 'text', text: 'กรุณาส่งสลิปการโอนเงินไว้เป็นหลักฐานด้วยค่ะ' },
+      {
+        type: 'image',
+        originalContentUrl: `https://seedgame-bot.onrender.com/images/qr-${userId}.png`,
+        previewImageUrl: `https://seedgame-bot.onrender.com/images/qr-${userId}.png`
+      }
+    ]);
+
+    let success = false;
+    const timeout = Date.now() + 2 * 60 * 1000;
+
+    while (Date.now() < timeout) {
+      const html = await page.content();
+      if (html.includes('ชำระเงินเรียบร้อย')) {
+        success = true;
+        break;
+      }
+      await page.waitForTimeout(3000);
+    }
+
+    if (success) {
+      const donePath = path.join(__dirname, `public/images/done-${userId}.png`);
+      await page.screenshot({ path: donePath, fullPage: true });
+
+      await client.pushMessage(userId, [
+        { type: 'text', text: 'ยอดเติมพ้อยท์ของท่านสมาชิกเรียบร้อย ขอขอบคุณ​มาก 🙏🥰' },
+        {
+          type: 'image',
+          originalContentUrl: `https://seedgame-bot.onrender.com/images/done-${userId}.png`,
+          previewImageUrl: `https://seedgame-bot.onrender.com/images/done-${userId}.png`
+        }
+      ]);
+    } else {
+      await client.pushMessage(userId, {
         type: 'text',
-        text: 'กรุณาพิมเฉพาะจำนวนเงินเป็นตัวเลข เช่น 100 500 1000 ค่ะ'
+        text: 'คำสั่งถูกยกเลิกเนื่องจากไม่มีการชำระเงินภายใน 5 นาทีค่ะ'
       });
     }
-    session[userId] = { step: 'await_aid', amount };
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: 'โปรดพิมพ์รหัส AID ของท่านเพื่อเริ่มการเติมเงินค่ะ เช่น:\nAID123456'
-    });
-  }
 
-  // รับ AID และเติมเงิน
-  if (session[userId]?.step === 'await_aid' && msg.startsWith('aid')) {
-    const aid = msg.toUpperCase();
-    const amount = session[userId].amount;
-    delete session[userId];
-    await client.replyMessage(event.replyToken, {
+  } catch (err) {
+    console.error('เกิดข้อผิดพลาด:', err);
+    await client.pushMessage(userId, {
       type: 'text',
-      text: `กำลังดำเนินการเติมเงิน ${amount} บาท ให้กับ ${aid} กรุณารอสักครู่ค่ะ...`
+      text: 'เกิดข้อผิดพลาดในการดำเนินการค่ะ'
     });
-    await execTopup(client, userId, aid, amount);
-    return;
+  } finally {
+    await browser.close();
+    delete pendingOrders[userId];
   }
-
-  return Promise.resolve(null);
 }
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`🚀 Bot server is running at port ${port}`);
-});
-
-
+module.exports = { execTopup };
