@@ -1,17 +1,17 @@
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-core');
 const fs = require('fs');
 const path = require('path');
 
 const pendingOrders = {};
-const userState = {};
 
-async function execTopup(client, userId, aid, amount) {
+async function execTopup(client, userId, aid) {
   if (pendingOrders[userId]) return;
   pendingOrders[userId] = true;
 
   const browser = await chromium.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    executablePath: '/usr/bin/google-chrome-stable'
   });
   const page = await browser.newPage();
 
@@ -22,13 +22,7 @@ async function execTopup(client, userId, aid, amount) {
     await page.click('text=เติมเงิน');
     await page.waitForTimeout(2000);
 
-    // กด + จนครบจำนวน
-    const step = 100;
-    const clicks = Math.floor(amount / step);
-    for (let i = 1; i < clicks; i++) {
-      await page.click('button.qty-count.qty-count-add');
-      await page.waitForTimeout(200);
-    }
+    await page.click('button.qty-count.qty-count-add');
 
     await page.click('text=ส่งพอยต์');
     await page.waitForSelector('input[name="aid"]', { timeout: 5000 });
@@ -95,8 +89,7 @@ async function execTopup(client, userId, aid, amount) {
   } finally {
     await browser.close();
     delete pendingOrders[userId];
-    delete userState[userId];
   }
 }
 
-module.exports = { execTopup, userState };
+module.exports = { execTopup };
