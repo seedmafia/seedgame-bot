@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "postinstall": "npx playwright install --with-deps"
+    "postinstall": "npx playwright install"
   },
   "dependencies": {
     "@line/bot-sdk": "^7.5.0",
