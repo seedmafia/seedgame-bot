@@ -1,0 +1,14 @@
+{
+  "name": "seedgame-bot",
+  "version": "1.0.0",
+  "description": "LINE Bot for SeedGame",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.0.3",
+    "@line/bot-sdk": "^7.5.0"
+  }
+}
