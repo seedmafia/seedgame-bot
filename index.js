@@ -12,20 +12,22 @@ const app = express();
 
 app.use(express.json());
 
-// ตอบกลับ OK สำหรับ Verify webhook
-app.get('/', (req, res) => res.send('OK'));
-
 app.post('/webhook', line.middleware(config), (req, res) => {
-  console.log('Webhook triggered');
+  console.log('🔔 Webhook triggered');
+
   if (!req.body.events || req.body.events.length === 0) {
-    return res.status(200).end(); // ตอบกลับ 200 ถ้าไม่มี event
+    console.log('⚠️ No events in body');
+    return res.status(200).send('No event');
   }
 
   Promise.all(req.body.events.map(handleEvent))
-    .then(result => res.json(result))
+    .then(result => {
+      console.log('✅ Events handled:', result);
+      res.status(200).json(result);
+    })
     .catch(err => {
-      console.error('Error in handleEvent:', err);
-      res.status(500).end(); // ตอบกลับ 500 ถ้ามี error
+      console.error('❌ Error handling events:', err);
+      res.status(500).end();
     });
 });
 
@@ -34,34 +36,24 @@ function handleEvent(event) {
     return Promise.resolve(null);
   }
 
-  const userDisplayName = event.source.userId;
-
-  if (!userDisplayName.includes('✅')) {
-    return client.replyMessage(event.replyToken, {
-      type: 'text',
-      text: 'You Not Mafia​ คุณไม่ใช่มาเฟีย..'
-    });
-  }
-
   const msg = event.message.text.toLowerCase();
+  const userId = event.source.userId;
+
+  // ข้ามการตรวจชื่อ ✅ ชั่วคราวเพื่อให้บอทตอบกลับได้
   if (msg === 'เติมเงิน' || msg === 'topup') {
     return client.replyMessage(event.replyToken, {
       type: 'text',
-      text:
-        'โปรดเลือกยอดเติม:\n' +
-        '20 บาท = 220 พ้อย\n' +
-        '100 บาท = 1,100 พ้อย\n' +
-        '500 บาท = 5,500 พ้อย\n' +
-        '1,000 บาท = 11,000 พ้อย\n' +
-        '10,000 บาท = 113,000 พ้อย\n' +
-        '(ระบบปุ่มยังไม่พร้อม)'
+      text: 'โปรดเลือกยอดเติม:\n20 บาท = 220 พ้อย\n100 บาท = 1,100 พ้อย\n500 บาท = 5,500 พ้อย\n1,000 บาท = 11,000 พ้อย\n10,000 บาท = 113,000 พ้อย\n(ระบบปุ่มยังไม่พร้อม)'
     });
   }
 
-  return Promise.resolve(null);
+  return client.replyMessage(event.replyToken, {
+    type: 'text',
+    text: 'You Not Mafia​ คุณไม่ใช่มาเฟีย..'
+  });
 }
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`Bot server is running at port ${port}`);
+  console.log(`🚀 Bot server is running at port ${port}`);
 });
