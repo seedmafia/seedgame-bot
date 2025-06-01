@@ -1,3 +1,4 @@
+// index.js
 const express = require('express');
 const line = require('@line/bot-sdk');
 const { execTopup } = require('./bot');
@@ -14,22 +15,24 @@ const app = express();
 
 app.use(express.json());
 
-// ✅ เสิร์ฟไฟล์ภาพ QR จาก /public/images
+// ✅ Serve static images from public/images
 app.use('/images', express.static(path.join(__dirname, 'public/images')));
 
-// ✅ Webhook จาก LINE
-app.post('/webhook', line.middleware(config), (req, res) => {
-  Promise.all(req.body.events.map(handleEvent))
-    .then(result => res.json(result))
-    .catch(err => {
-      console.error('Webhook error:', err);
-      res.status(500).end();
-    });
+// ✅ Webhook endpoint
+app.post('/webhook', line.middleware(config), async (req, res) => {
+  try {
+    const results = await Promise.all(req.body.events.map(handleEvent));
+    res.json(results); // ✅ ส่งสถานะ 200 กลับให้ LINE Platform
+  } catch (err) {
+    console.error('Webhook error:', err);
+    res.status(500).end(); // ❌ ถ้ามี error
+  }
 });
 
+// ✅ Event handler
 async function handleEvent(event) {
   if (event.type !== 'message' || event.message.type !== 'text') {
-    return Promise.resolve(null);
+    return null;
   }
 
   const msg = event.message.text.toLowerCase();
@@ -59,9 +62,10 @@ async function handleEvent(event) {
     await execTopup(client, userId, aid);
   }
 
-  return Promise.resolve(null);
+  return null;
 }
 
+// ✅ Start server
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`🚀 Bot server is running at port ${port}`);
