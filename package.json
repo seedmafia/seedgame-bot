@@ -1,17 +1,15 @@
 {
   "name": "seedgame-bot",
   "version": "1.0.0",
-  "description": "Topup automation bot for seedgame using LINE Messaging API and Playwright",
+  "description": "Seedgame เติมเงินอัตโนมัติ",
   "main": "index.js",
-  "type": "commonjs",
   "scripts": {
     "start": "node index.js",
     "postinstall": "npx playwright install"
   },
   "dependencies": {
-    "@line/bot-sdk": "^7.5.0",
-    "dotenv": "^16.3.1",
+    "@line/bot-sdk": "^7.5.1",
     "express": "^4.18.2",
-    "playwright": "^1.43.1"
+    "playwright": "^1.44.0"
   }
 }
