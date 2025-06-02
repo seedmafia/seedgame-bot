@@ -1,67 +1,50 @@
-
 const fs = require('fs');
 const { chromium } = require('playwright');
 
-async function runBot() {
-  console.log('[BOT] Waiting for pending.json...');
-
+(async () => {
   while (true) {
     if (fs.existsSync('pending.json')) {
+      const pending = JSON.parse(fs.readFileSync('pending.json', 'utf-8'));
+      if (!pending.aid || !pending.amount) {
+        await new Promise(r => setTimeout(r, 3000));
+        continue;
+      }
+
+      const browser = await chromium.launch({
+        headless: false,
+        executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+      });
+      const page = await browser.newPage();
+      await page.goto('https://news.combocabalm.com');
+
       try {
-        const data = JSON.parse(fs.readFileSync('pending.json', 'utf8'));
-        if (!data.amount || !data.aid) {
-          console.log('[BOT] Invalid pending.json data.');
-          await new Promise(res => setTimeout(res, 1000));
-          continue;
+        await page.click('body > nav > div > div.d-flex.justify-content-center.justify-content-lg-center.align-items-center.w-lg-100 > ul > li:nth-child(3) > a');
+        await page.waitForTimeout(2000);
+
+        const pages = browser.contexts()[0].pages();
+        const topupPage = pages[pages.length - 1];
+        await topupPage.bringToFront();
+
+        await topupPage.click('body > div > div.mb-auto > div > div.position-sticky.top-0.start-0 > div.navpc-box.p-2 > div > div > div.wallet-area > div:nth-child(1) > a');
+
+        for (let i = 20; i < pending.amount; i += 20) {
+          await topupPage.click('button.qty-count.qty-count--add');
         }
 
-        console.log(`[BOT] Start processing ${data.amount} Baht for AID: ${data.aid}`);
+        await topupPage.click('div.custom-ipad-topup > div > div:nth-child(2) > button');
+        await topupPage.fill('input[name="friendCode"]', pending.aid);
+        await topupPage.click('form > button');
+        await topupPage.click('div.bg-blue7.mt-4 > div > div:nth-child(2) > label');
+        await topupPage.click('div.mt-3 > button');
 
-        const browser = await chromium.launch({
-          headless: false,
-          executablePath: "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-        });
-        const context = await browser.newContext();
-        const page = await context.newPage();
-
-        await page.goto("https://th-member.combocabalm.com/topup");
-
-        // Wait for login and package buttons
-        await page.waitForTimeout(10000);
-
-        // Click package
-        const amount = parseInt(data.amount);
-        const priceMap = {
-          20: 0, 100: 1, 500: 2, 1000: 3, 10000: 4, 50000: 5, 100000: 6
-        };
-
-        const priceIndex = priceMap[amount];
-        if (priceIndex !== undefined) {
-          await page.locator('button:has-text("+")').nth(priceIndex).click();
-        } else {
-          console.log("[BOT] Invalid amount or not in price map.");
-          await browser.close();
-          continue;
-        }
-
-        await page.getByRole('button', { name: 'Send Point' }).click();
-        await page.getByPlaceholder('Enter AID').fill(data.aid);
-        await page.getByRole('button', { name: 'Confirm' }).click();
-
-        await page.waitForSelector('text=QR Code');
-        await page.screenshot({ path: 'screenshot_qr.png' });
-
-        console.log('[BOT] Screenshot saved as screenshot_qr.png');
-        await browser.close();
-
+        await topupPage.screenshot({ path: `qrcode_${Date.now()}.png` });
         fs.unlinkSync('pending.json');
-        console.log('[BOT] Done and pending.json removed.');
+        await browser.close();
       } catch (err) {
-        console.error('[BOT] Error:', err);
+        console.error('❌ ERROR:', err);
+        await browser.close();
       }
     }
-    await new Promise(res => setTimeout(res, 1000));
+    await new Promise(r => setTimeout(r, 5000));
   }
-}
-
-runBot();
+})();
