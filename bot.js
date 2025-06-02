@@ -1,5 +1,7 @@
 const fs = require('fs');
 const { chromium } = require('playwright');
+const { client } = require('./line');
+const path = require('path');
 
 const QUEUE_FILE = 'queue.json';
 
@@ -16,12 +18,12 @@ function saveQueue(queue) {
   while (true) {
     const queue = loadQueue();
     if (queue.length === 0) {
-      await new Promise(r => setTimeout(r, 5000));
+      await new Promise(r => setTimeout(r, 3000));
       continue;
     }
 
     const current = queue[0];
-    console.log('🔄 กำลังดำเนินการเติมเงินให้:', current);
+    console.log('🔄 เริ่มเติมเงินให้:', current);
 
     const browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
@@ -52,11 +54,61 @@ function saveQueue(queue) {
       await topupPage.click('div.bg-blue7.mt-4 > div > div:nth-child(2) > label');
       await topupPage.click('div.mt-3 > button');
 
-      await topupPage.screenshot({ path: `qrcode_${Date.now()}.png` });
+      const timestamp = Date.now();
+      const outputDir = path.join(__dirname, 'public/qr');
+      if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+      const qrFile = `qr-${timestamp}.png`;
+      const qrPath = path.join(outputDir, qrFile);
+      await topupPage.screenshot({ path: qrPath });
+
+      await client.pushMessage(current.userId, {
+        type: 'image',
+        originalContentUrl: `https://seedgame-bot.onrender.com/qr/${qrFile}`,
+        previewImageUrl: `https://seedgame-bot.onrender.com/qr/${qrFile}`
+      });
+
+      await client.pushMessage(current.userId, {
+        type: 'text',
+        text: 'กรุณาส่งสลิปการโอนเงินยืนยันด้วยนะค่ะ'
+      });
+
+      // เฝ้ารอผลลัพธ์
+      const start = Date.now();
+      let isPaid = false;
+
+      while (Date.now() - start < 300000) {
+        const paid = await topupPage.$('div.text-success:has-text("เติมเงินสำเร็จ")');
+        if (paid) {
+          const successFile = `success-${timestamp}.png`;
+          const successPath = path.join(outputDir, successFile);
+          await topupPage.screenshot({ path: successPath });
+
+          await client.pushMessage(current.userId, {
+            type: 'image',
+            originalContentUrl: `https://seedgame-bot.onrender.com/qr/${successFile}`,
+            previewImageUrl: `https://seedgame-bot.onrender.com/qr/${successFile}`
+          });
+
+          await client.pushMessage(current.userId, {
+            type: 'text',
+            text: 'เติมเงินสำเร็จแล้ว ขอบคุณที่ใช้บริการค่ะ'
+          });
+          isPaid = true;
+          break;
+        }
+        await new Promise(r => setTimeout(r, 3000));
+      }
+
+      if (!isPaid) {
+        await client.pushMessage(current.userId, {
+          type: 'text',
+          text: 'ระบบยกเลิกรายการของคุณ เนื่องจากไม่ชำระเงินภายใน 5 นาทีค่ะ'
+        });
+      }
 
       const newQueue = loadQueue().slice(1);
       saveQueue(newQueue);
-
       await browser.close();
     } catch (err) {
       console.error('❌ ERROR:', err);

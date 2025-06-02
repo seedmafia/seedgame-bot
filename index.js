@@ -3,6 +3,7 @@ const express = require('express');
 const line = require('@line/bot-sdk');
 const { client, getDisplayName } = require('./line');
 const fs = require('fs');
+const path = require('path');
 
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
@@ -20,6 +21,9 @@ function loadQueue() {
 function saveQueue(queue) {
   fs.writeFileSync(QUEUE_FILE, JSON.stringify(queue, null, 2));
 }
+
+// serve static files from public directory
+app.use('/qr', express.static(path.join(__dirname, 'public/qr')));
 
 app.post('/webhook', line.middleware(config), express.json(), async (req, res) => {
   const events = req.body.events;
