@@ -1,73 +1,49 @@
 const express = require('express');
+const line = require('@line/bot-sdk');
 const bodyParser = require('body-parser');
-const { client, getDisplayName } = require('./line');
-const fs = require('fs');
-require('dotenv').config();
 
+const config = {
+  channelAccessToken: process.env.LINE_ACCESS_TOKEN,
+  channelSecret: process.env.LINE_CHANNEL_SECRET,
+};
+
+const client = new line.Client(config);
 const app = express();
+
 app.use(bodyParser.json());
 
-let pending = null;
-
-app.post('/webhook', async (req, res) => {
+app.post('/webhook', line.middleware(config), async (req, res) => {
   const events = req.body.events;
+
   for (const event of events) {
     if (event.type === 'message' && event.message.type === 'text') {
-      const msg = event.message.text.trim();
+      const userMessage = event.message.text;
       const userId = event.source.userId;
-      const name = await getDisplayName(userId);
 
-      if (!name.includes('✅')) {
-        await client.replyMessage(event.replyToken, {
-          type: 'text',
-          text: 'You Not Mafia​ คุณไม่ใช่มาเฟีย..'
-        });
-        continue;
-      }
-
-      if (!pending) {
-        if (msg === 'เติมเงิน' || msg.toLowerCase() === 'topup') {
-          await client.replyMessage(event.replyToken, {
-            type: 'text',
-            text:
-\`กรุณาเลือกราคาที่ต้องการเติมค่ะ
-- 100 บาท ได้ 1,100 points
-- 500 บาท ได้ 5,500 points
-- 1000 บาท ได้ 11,000 points
-- 3000 บาท ได้ 33,000 points
-- 10000 บาท ได้ 113,000 points
-
-หรือพิมพ์จำนวนเงินเอง (20, 40, 60, ... สูงสุด 100,000 บาท)\`
-          });
-          pending = { userId };
-        }
-      } else if (!pending.amount && /^\d+$/.test(msg)) {
-        const amount = parseInt(msg);
-        if ([10, 30, 50, 70, 90].includes(amount)) {
-          await client.replyMessage(event.replyToken, {
-            type: 'text',
-            text: 'ขออภัย ไม่รองรับยอดนี้ กรุณาระบุใหม่ (ขั้นต่ำ 20 และเพิ่มครั้งละ 20)'
-          });
-          continue;
-        }
-        pending.amount = amount;
-        await client.replyMessage(event.replyToken, {
-          type: 'text',
-          text: \`\${amount} บาทค่ะ กรุณาพิมพ์ AID 25 หลักของท่านเลยค่ะ\`
-        });
-      } else if (!pending.aid && msg.length === 25) {
-        pending.aid = msg;
-        fs.writeFileSync('pending.json', JSON.stringify(pending, null, 2));
-        await client.replyMessage(event.replyToken, {
-          type: 'text',
-          text: \`กำลังเติมเงิน \${pending.amount} บาทให้กับ AID: \${pending.aid} ค่ะ กรุณารอสักครู่...\`
-        });
+      // เงื่อนไขเบื้องต้น
+      if (userMessage === 'เติมเงิน' || userMessage.toLowerCase() === 'topup') {
+        await sendMessage(userId, `กรุณาเลือกราคาที่ต้องการเติมค่ะ`);
+      } else {
+        await sendMessage(userId, `กรุณาพิมพ์ "เติมเงิน" หรือ "topup" เพื่อเริ่มใช้งานค่ะ`);
       }
     }
   }
-  res.sendStatus(200);
+
+  res.status(200).end();
 });
 
-app.listen(3000, () => {
-  console.log('seedgame-bot is running on port 3000');
+async function sendMessage(userId, message) {
+  try {
+    await client.pushMessage(userId, {
+      type: 'text',
+      text: message,
+    });
+  } catch (err) {
+    console.error('ส่งข้อความล้มเหลว:', err);
+  }
+}
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`🚀 เริ่มต้นเซิร์ฟเวอร์ที่พอร์ต ${port}`);
 });
