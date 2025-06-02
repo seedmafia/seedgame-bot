@@ -1,49 +1,84 @@
+require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
 const bodyParser = require('body-parser');
+const { client, getDisplayName } = require('./line');
+const fs = require('fs');
 
 const config = {
-  channelAccessToken: process.env.LINE_ACCESS_TOKEN,
+  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.LINE_CHANNEL_SECRET,
 };
 
-const client = new line.Client(config);
 const app = express();
-
 app.use(bodyParser.json());
+
+const QUEUE_FILE = 'queue.json';
+
+function loadQueue() {
+  if (!fs.existsSync(QUEUE_FILE)) return [];
+  return JSON.parse(fs.readFileSync(QUEUE_FILE, 'utf-8'));
+}
+
+function saveQueue(queue) {
+  fs.writeFileSync(QUEUE_FILE, JSON.stringify(queue, null, 2));
+}
 
 app.post('/webhook', line.middleware(config), async (req, res) => {
   const events = req.body.events;
 
   for (const event of events) {
     if (event.type === 'message' && event.message.type === 'text') {
-      const userMessage = event.message.text;
+      const text = event.message.text;
       const userId = event.source.userId;
+      const name = await getDisplayName(userId);
 
-      // เงื่อนไขเบื้องต้น
-      if (userMessage === 'เติมเงิน' || userMessage.toLowerCase() === 'topup') {
-        await sendMessage(userId, `กรุณาเลือกราคาที่ต้องการเติมค่ะ`);
+      if (!name.includes('✅')) {
+        await client.pushMessage(userId, { type: 'text', text: 'You Not Mafia​ คุณไม่ใช่มาเฟีย..' });
+        continue;
+      }
+
+      if (text === 'เติมเงิน' || text.toLowerCase() === 'topup') {
+        await client.pushMessage(userId, {
+          type: 'text',
+          text: `เลือกจำนวนเงินที่ต้องการเติมค่ะ:
+- 100 บาท ได้ 1,100 points
+- 500 บาท ได้ 5,500 points
+- 1,000 บาท ได้ 11,000 points
+- 3,000 บาท ได้ 33,000 points
+- 10,000 บาท ได้ 113,000 points
+
+หรือพิมพ์จำนวนเองได้ เช่น 920`
+        });
+      } else if (/^\d+$/.test(text)) {
+        fs.writeFileSync(`amount-${userId}.txt`, text);
+        await client.pushMessage(userId, { type: 'text', text: 'กรุณาส่ง AID ของคุณ (25 หลัก)' });
+      } else if (text.length === 25) {
+        const amountPath = `amount-${userId}.txt`;
+        if (fs.existsSync(amountPath)) {
+          const amount = parseInt(fs.readFileSync(amountPath, 'utf-8'));
+          const queue = loadQueue();
+          queue.push({ userId, aid: text, amount });
+          saveQueue(queue);
+          fs.unlinkSync(amountPath);
+          await client.pushMessage(userId, {
+            type: 'text',
+            text: `รับคำสั่งเติมเงินเรียบร้อยแล้วค่ะ คุณอยู่ในลำดับที่ ${queue.length}`
+          });
+        }
       } else {
-        await sendMessage(userId, `กรุณาพิมพ์ "เติมเงิน" หรือ "topup" เพื่อเริ่มใช้งานค่ะ`);
+        await client.pushMessage(userId, {
+          type: 'text',
+          text: `กรุณาพิมพ์ "เติมเงิน" หรือ "topup" เพื่อเริ่มต้นใช้งานค่ะ`
+        });
       }
     }
   }
 
-  res.status(200).end();
+  return res.status(200).send('OK');
 });
-
-async function sendMessage(userId, message) {
-  try {
-    await client.pushMessage(userId, {
-      type: 'text',
-      text: message,
-    });
-  } catch (err) {
-    console.error('ส่งข้อความล้มเหลว:', err);
-  }
-}
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`🚀 เริ่มต้นเซิร์ฟเวอร์ที่พอร์ต ${port}`);
+  console.log(`🚀 Server เริ่มที่พอร์ต ${port}`);
 });
