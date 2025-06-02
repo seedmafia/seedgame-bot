@@ -1,4 +1,3 @@
-require('dotenv').config();
 const line = require('@line/bot-sdk');
 
 const config = {
@@ -8,4 +7,16 @@ const config = {
 
 const client = new line.Client(config);
 
-module.exports = { client };
+async function getDisplayName(userId) {
+  try {
+    const profile = await client.getProfile(userId);
+    return profile.displayName;
+  } catch (err) {
+    return '';
+  }
+}
+
+module.exports = {
+  client,
+  getDisplayName
+};
