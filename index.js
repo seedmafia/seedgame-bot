@@ -1,116 +1,95 @@
+require('dotenv').config();
 const express = require('express');
-const path = require('path');
+const { middleware, client, getDisplayName } = require('./line');
 const fs = require('fs');
-const { client, getDisplayName } = require('./line');
-const { execTopup } = require('./bot');
-
+const { exec } = require('child_process');
+const bodyParser = require('body-parser');
 const app = express();
-app.use(express.json());
-app.use('/images', express.static(path.join(__dirname, 'public/images')));
 
-const conversationState = {};
-let isProcessing = false;
-let lastStartTime = null;
+app.use(bodyParser.json());
+app.use(middleware);
 
-function isValidAmount(amount) {
-  return amount >= 20 && amount % 20 === 0;
-}
+let pending = null;
+let lastRequestTime = 0;
 
-function resetIfTimeout() {
-  if (isProcessing && lastStartTime) {
-    const elapsed = Date.now() - lastStartTime;
-    if (elapsed > 5 * 60 * 1000) {
-      isProcessing = false;
-      lastStartTime = null;
-    }
-  }
-}
+const allowAmounts = [100, 500, 1000, 3000, 10000];
+const availableAmounts = Array.from({ length: 5000 }, (_, i) => (i + 1) * 20).filter(a => ![10, 30, 50, 70, 90].includes(a));
 
 app.post('/webhook', async (req, res) => {
-  const events = req.body.events || [];
-  for (const event of events) {
-    if (event.type === 'message' && event.message.type === 'text') {
-      const userId = event.source.userId;
-      const msg = event.message.text.trim();
+  const event = req.body.events[0];
+  const userId = event.source.userId;
+  const message = event.message?.text?.trim();
 
-      resetIfTimeout();
+  if (!event.message || event.message.type !== 'text') return res.sendStatus(200);
 
-      const displayName = await getDisplayName(userId);
-      if (!displayName.includes('✅')) {
-        await client.pushMessage(userId, { type: 'text', text: 'You Not Mafia​ คุณไม่ใช่มาเฟีย..' });
-        continue;
-      }
+  const name = await getDisplayName(userId);
+  if (!name.includes('✅')) {
+    await client.replyMessage(event.replyToken, { type: 'text', text: 'You Not Mafia​ คุณไม่ใช่มาเฟีย..' });
+    return res.sendStatus(200);
+  }
 
-      if (isProcessing) {
-        await client.pushMessage(userId, { type: 'text', text: 'ขณะนี้ระบบกำลังเติมเงินให้ผู้ใช้อื่น กรุณารอสักครู่ค่ะ' });
-        continue;
-      }
+  const now = Date.now();
+  if (pending && now - lastRequestTime < 300000) { // 5 นาที
+    await client.replyMessage(event.replyToken, { type: 'text', text: 'ขออภัย กำลังดำเนินการรายการก่อนหน้า กรุณารอสักครู่ค่ะ' });
+    return res.sendStatus(200);
+  }
 
-      const state = conversationState[userId] || { stage: null, amount: null };
+  if (!pending) {
+    if (message.toLowerCase() === 'เติมเงิน' || message.toLowerCase() === 'topup') {
+      await client.replyMessage(event.replyToken, {
+        type: 'text',
+        text: `กรุณาเลือกราคาที่ต้องการเติมค่ะ
+- 100 บาท ได้ 1,100 points
+- 500 บาท ได้ 5,500 points
+- 1000 บาท ได้ 11,000 points
+- 3000 บาท ได้ 33,000 points
+- 10000 บาท ได้ 113,000 points
 
-      if ((msg === 'เติมเงิน' || msg.toLowerCase() === 'topup') && !state.stage) {
-        conversationState[userId] = { stage: 'awaiting_amount' };
-        await client.pushMessage(userId, {
+หรือพิมพ์จำนวนเงินเอง (20, 40, 60, ... สูงสุด 100,000 บาท)`
+      });
+      return res.sendStatus(200);
+    }
+
+    const amount = parseInt(message);
+    if (!isNaN(amount)) {
+      if (allowAmounts.includes(amount) || availableAmounts.includes(amount)) {
+        pending = { step: 1, amount, userId, replyToken: event.replyToken };
+        lastRequestTime = now;
+        await client.replyMessage(event.replyToken, {
           type: 'text',
-          text: 'กรุณาเลือกราคาที่ต้องการเติมค่ะ\n- 100 บาท ได้ 1,100 points\n- 500 บาท ได้ 5,500 points\n- 1000 บาท ได้ 11,000 points\n- 3000 บาท ได้ 33,000 points\n- 10000 บาท ได้ 113,000 points\n\nหรือพิมพ์จำนวนเงินเอง (20, 40, 60, ... สูงสุด 100,000 บาท)'
+          text: `ยอด ${amount} บาทค่ะ กรุณาพิมพ์ AID 25 หลักของท่านเลยค่ะ`
         });
-        continue;
-      }
-
-      if (state.stage === 'awaiting_amount' && !isNaN(msg)) {
-        const amount = parseInt(msg);
-        if (!isValidAmount(amount)) {
-          await client.pushMessage(userId, { type: 'text', text: 'กรุณาระบุจำนวนเงินเป็นเลขที่มีในระบบ เช่น 20, 40, 60, ... สูงสุด 100000 บาทค่ะ' });
-          continue;
-        }
-        conversationState[userId] = { stage: 'awaiting_aid', amount };
-        await client.pushMessage(userId, { type: 'text', text: `ยอด ${amount} บาทค่ะ กรุณาพิมพ์ AID 25 หลักของท่านเลยค่ะ` });
-        continue;
-      }
-
-      if (state.stage === 'awaiting_aid' && /^[A-Z0-9]{25}$/i.test(msg)) {
-        const aid = msg.trim();
-        const amount = state.amount;
-
-        conversationState[userId] = null;
-        isProcessing = true;
-        lastStartTime = Date.now();
-
-        await client.pushMessage(userId, { type: 'text', text: `กำลังเติมเงิน ${amount} บาทให้กับ AID: ${aid} ค่ะ กรุณารอสักครู่...` });
-
-        try {
-          const result = await execTopup(userId, amount, aid);
-
-          await client.pushMessage(userId, {
-            type: 'image',
-            originalContentUrl: result.imageUrl,
-            previewImageUrl: result.imageUrl
-          });
-
-          if (result.imageUrl.includes('_qr.png')) {
-            await client.pushMessage(userId, {
-              type: 'text',
-              text: 'กรุณาสแกน QR เพื่อชำระเงินค่ะ และส่งสลิปยืนยันกลับมาด้วยนะคะ ขอบคุณค่ะ'
-            });
-          } else {
-            await client.pushMessage(userId, {
-              type: 'text',
-              text: 'เติมเงินสำเร็จ ขอบคุณที่ใช้บริการค่ะ'
-            });
-          }
-        } catch (e) {
-          await client.pushMessage(userId, { type: 'text', text: 'เกิดข้อผิดพลาดระหว่างเติมเงินค่ะ กรุณาลองใหม่หรือติดต่อแอดมินค่ะ' });
-        }
-
-        isProcessing = false;
-        lastStartTime = null;
+        return res.sendStatus(200);
       }
     }
   }
-  res.sendStatus(200);
+
+  if (pending?.step === 1 && /^[A-Z0-9]{25}$/i.test(message)) {
+    pending.aid = message.toUpperCase();
+    pending.step = 2;
+
+    fs.writeFileSync('pending.json', JSON.stringify(pending, null, 2));
+
+    await client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: `กำลังเติมเงิน ${pending.amount} บาทให้กับ AID: ${pending.aid} ค่ะ กรุณารอสักครู่...`
+    });
+
+    exec('node bot.js', (error, stdout, stderr) => {
+      if (error) {
+        console.error(error);
+        client.pushMessage(pending.userId, { type: 'text', text: 'เกิดข้อผิดพลาดระหว่างเติมเงินค่ะ กรุณาลองใหม่หรือติดต่อแอดมินค่ะ' });
+        pending = null;
+        return;
+      }
+    });
+
+    return res.sendStatus(200);
+  }
+
+  return res.sendStatus(200);
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log('seedgame-bot is running on port', PORT);
+app.listen(3000, () => {
+  console.log('seedgame-bot is running on port 3000');
 });
