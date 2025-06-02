@@ -1,17 +1,8 @@
-const { chromium } = require('playwright');
-const fs = require('fs');
 const path = require('path');
-const pendingOrders = {};
+const { chromium } = require('playwright');
 
 async function execTopup(client, userId, aid, amount) {
-  if (pendingOrders[userId]) return;
-  pendingOrders[userId] = true;
-
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
-
+  const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
 
   try {
@@ -76,7 +67,6 @@ async function execTopup(client, userId, aid, amount) {
         text: 'คำสั่งถูกยกเลิกเนื่องจากไม่มีการชำระเงินภายใน 5 นาทีค่ะ'
       });
     }
-
   } catch (err) {
     console.error('เกิดข้อผิดพลาด:', err);
     await client.pushMessage(userId, {
@@ -85,7 +75,6 @@ async function execTopup(client, userId, aid, amount) {
     });
   } finally {
     await browser.close();
-    delete pendingOrders[userId];
   }
 }
 
