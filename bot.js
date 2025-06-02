@@ -14,9 +14,14 @@ const amountSelectorMap = {
 
 async function execTopup(userId, amount, aid) {
   console.log('เริ่มทำงาน: execTopup');
-  const browser = await chromium.launch({ headless: false }); // Show browser
-  const page = await browser.newPage();
+  const browser = await chromium.launch({
+    headless: false,
+    executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    args: ['--start-maximized'],
+    userDataDir: 'C:/Users/ADMIN/AppData/Local/Google/Chrome/User Data'
+  });
 
+  const page = await browser.newPage();
   try {
     console.log('กำลังเปิดหน้าเว็บเติมเงิน...');
     await page.goto('https://th-member.combocabalm.com/topup', { timeout: 60000 });
