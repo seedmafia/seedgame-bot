@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const line = require('@line/bot-sdk');
-const bodyParser = require('body-parser');
 const { client, getDisplayName } = require('./line');
 const fs = require('fs');
 
@@ -11,8 +10,6 @@ const config = {
 };
 
 const app = express();
-app.use(bodyParser.json());
-
 const QUEUE_FILE = 'queue.json';
 
 function loadQueue() {
@@ -24,7 +21,7 @@ function saveQueue(queue) {
   fs.writeFileSync(QUEUE_FILE, JSON.stringify(queue, null, 2));
 }
 
-app.post('/webhook', line.middleware(config), async (req, res) => {
+app.post('/webhook', line.middleware(config), express.json(), async (req, res) => {
   const events = req.body.events;
 
   for (const event of events) {
