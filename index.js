@@ -56,3 +56,8 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Server เริ่มที่พอร์ต ${PORT}`);
 });
+
+app.get("/queue", (req, res) => {
+  const queue = JSON.parse(fs.readFileSync("queue.json"));
+  res.json(queue);
+});
