@@ -1,63 +1,33 @@
-const express = require("express");
-const line = require("@line/bot-sdk");
-const fs = require("fs");
-const path = require("path");
-const { handleEvent } = require("./line");
-
-const config = {
-  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.CHANNEL_SECRET,
-};
-
-const client = new line.Client(config);
+// ✅ index.js (ฝั่ง Render - Webhook)
+const express = require('express');
+const fs = require('fs');
 const app = express();
+const PORT = process.env.PORT || 10000;
 
-app.post("/webhook", line.middleware(config), express.json(), (req, res) => {
-  res.status(200).end();
-  const events = req.body.events;
-  if (!events || events.length === 0) return;
-  events.forEach((event) => {
-    handleEvent(event, client);
-  });
-});
+app.use(express.json());
 
-// ✅ ให้ client-bot POST มาที่นี่พร้อมภาพ
-app.use(express.json({ limit: '10mb' }));
-app.post("/report-success", async (req, res) => {
+// 📥 POST: เขียน queue.json เมื่อมีคำสั่งเติมเงิน
+app.post('/queue', (req, res) => {
+  const queue = req.body;
   try {
-    const { userId, imageBase64 } = req.body;
-    const imagePath = path.join(__dirname, "public", `${userId}.jpg`);
-    fs.writeFileSync(imagePath, Buffer.from(imageBase64, "base64"));
-
-    // ตอบกลับลูกค้าใน LINE
-    await client.pushMessage(userId, [
-      {
-        type: "image",
-        originalContentUrl: `https://seedgame-bot.onrender.com/public/${userId}.jpg`,
-        previewImageUrl: `https://seedgame-bot.onrender.com/public/${userId}.jpg`,
-      },
-      {
-        type: "text",
-        text: "ขอบคุณที่ใช้บริการค่ะ ระบบได้ทำรายการให้เรียบร้อยแล้วนะคะ ❤️",
-      },
-    ]);
-
-    res.status(200).json({ success: true });
+    fs.writeFileSync('queue.json', JSON.stringify(queue, null, 2));
+    res.send({ message: 'อัปเดตคิวเรียบร้อยแล้วค่ะ' });
   } catch (err) {
-    console.error("❌ report-success error:", err.message);
-    res.status(500).json({ error: "Failed to report success" });
+    res.status(500).send({ error: 'ไม่สามารถเขียนไฟล์ queue ได้ค่ะ' });
   }
 });
 
-// serve image
-app.use("/public", express.static(path.join(__dirname, "public")));
-
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server เริ่มที่พอร์ต ${PORT}`);
+// 📤 GET: ให้ฝั่ง bot.js ดึง queue ล่าสุดไปดำเนินการ
+app.get('/queue', (req, res) => {
+  try {
+    const data = fs.readFileSync('queue.json', 'utf8');
+    res.setHeader('Content-Type', 'application/json');
+    res.send(data);
+  } catch (err) {
+    res.status(500).send({ error: 'ไม่พบไฟล์ queue.json ค่ะ' });
+  }
 });
 
-app.get("/queue", (req, res) => {
-  const queue = JSON.parse(fs.readFileSync("queue.json"));
-  res.json(queue);
+app.listen(PORT, () => {
+  console.log(`🚀 Server เริ่มที่พอร์ต ${PORT}`);
 });
