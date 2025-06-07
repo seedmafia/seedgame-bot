@@ -64,9 +64,9 @@ app.post('/webhook', async (req, res) => {
 
   if (state?.step === 'aid') {
     if (message.length === 25 && /^[A-Z0-9]+$/.test(message)) {
-      const newQueue = [{ amount: state.amount, aid: message, status: 'pending' }];
+      const newItem = { amount: state.amount, aid: message, status: 'pending' };
       try {
-        await axios.post('http://localhost:10000/queue', newQueue);
+        await axios.post('http://localhost:10000/queue', newItem);
         delete tempQueue[userId];
         return reply(event.replyToken, `รับคำสั่งเติมเงินแล้วค่ะ
 ยอด ${state.amount} บาท AID: ${message}
